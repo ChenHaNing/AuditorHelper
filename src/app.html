@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" type="image/png" href="/favicon/favicon-96x96.png" sizes="96x96" />
+		<link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg" />
+		<link rel="shortcut icon" href="/favicon/favicon.ico" />
+		<link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+		<meta name="apple-mobile-web-app-title" content="审计大模型" />
+		<link rel="manifest" href="/favicon/site.webmanifest" />
+		<meta
+			name="viewport"
+			content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover"
+		/>
+		<meta name="theme-color" content="#171717" />
+		<meta name="robots" content="noindex,nofollow" />
+		<meta name="description" content="审计大模型" />
+		<link
+			rel="search"
+			type="application/opensearchdescription+xml"
+			title="审计大模型"
+			href="/opensearch.xml"
+		/>
+		
+		<!-- 预加载关键资源 -->
+		<link rel="preload" href="/static/splash.png" as="image" />
+		
+		<!-- 内网穿透环境优化代码 -->
+		<script>
+			// 检测是否为内网穿透环境（基于连接速度和延迟）
+			window.isSlowNetwork = false;
+			
+			// 检测网络质量
+			const connectionDetect = () => {
+				if (navigator.connection) {
+					window.isSlowNetwork = ['slow-2g', '2g', '3g'].includes(navigator.connection.effectiveType);
+				} else {
+					// 使用性能API检查加载时间
+					const navStart = performance.timing ? performance.timing.navigationStart : 0;
+					const responseEnd = performance.timing ? performance.timing.responseEnd : 0;
+					if (responseEnd - navStart > 1000) {
+						window.isSlowNetwork = true;
+					}
+				}
+				
+				// 内网穿透模式自动应用
+				if (window.isSlowNetwork) {
+					document.documentElement.classList.add('slow-network');
+					console.log('内网穿透/慢速网络模式已启用');
+				}
+			};
+			
+			// 立即执行检测
+			connectionDetect();
+			
+			// 主脚本加载策略
+			const loadScripts = () => {
+				// 优先加载loader.js
+				const loaderScript = document.createElement('script');
+				loaderScript.src = "/static/loader.js";
+				loaderScript.defer = true;
+				document.head.appendChild(loaderScript);
+				
+				// 添加中文语言包优先模式
+				localStorage.locale = 'zh-CN'; // 强制使用中文
+			};
+			
+			// 针对慢网络的优化措施
+			if (window.isSlowNetwork) {
+				// 超时处理
+				setTimeout(() => {
+					const splashScreen = document.getElementById('splash-screen');
+					if (splashScreen) {
+						splashScreen.style.display = 'none';
+						console.log('启动屏幕已通过超时移除（内网穿透模式）');
+					}
+				}, 4000);
+			}
+			
+			// 延迟加载主脚本
+			loadScripts();
+		</script>
+
+		<script>
+			// 添加更激进的超时机制，针对内网穿透环境
+			let splashRemoved = false;
+			
+			// 添加多个超时检查点
+			setTimeout(function() {
+				const splashScreen = document.getElementById('splash-screen');
+				if (splashScreen && !splashRemoved) {
+					splashScreen.style.display = 'none';
+					splashRemoved = true;
+					console.log('Splash screen hidden after quick timeout (3s)');
+				}
+			}, 3000);
+
+			// 主超时机制
+			window.addEventListener('load', function() {
+				setTimeout(function() {
+					const splashScreen = document.getElementById('splash-screen');
+					if (splashScreen && !splashRemoved) {
+						splashScreen.style.display = 'none';
+						splashRemoved = true;
+						console.log('Splash screen hidden after timeout (5s)');
+					}
+				}, 5000);
+			});
+
+			// DOMContentLoaded 也检查
+			document.addEventListener('DOMContentLoaded', function() {
+				setTimeout(function() {
+					const splashScreen = document.getElementById('splash-screen');
+					if (splashScreen && !splashRemoved) {
+						splashScreen.style.display = 'none';
+						splashRemoved = true;
+						console.log('Splash screen hidden after DOMContentLoaded + 2s');
+					}
+				}, 2000);
+			});
+
+			function resizeIframe(obj) {
+				obj.style.height = obj.contentWindow.document.documentElement.scrollHeight + 'px';
+			}
+		</script>
+
+		<script>
+			// On page load or when changing themes, best to add inline in `head` to avoid FOUC
+			(() => {
+				const metaThemeColorTag = document.querySelector('meta[name="theme-color"]');
+				const prefersDarkTheme = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+				if (!localStorage?.theme) {
+					localStorage.theme = 'system';
+				}
+
+				if (localStorage.theme === 'system') {
+					document.documentElement.classList.add(prefersDarkTheme ? 'dark' : 'light');
+					metaThemeColorTag.setAttribute('content', prefersDarkTheme ? '#171717' : '#ffffff');
+				} else if (localStorage.theme === 'oled-dark') {
+					document.documentElement.style.setProperty('--color-gray-800', '#101010');
+					document.documentElement.style.setProperty('--color-gray-850', '#050505');
+					document.documentElement.style.setProperty('--color-gray-900', '#000000');
+					document.documentElement.style.setProperty('--color-gray-950', '#000000');
+					document.documentElement.classList.add('dark');
+					metaThemeColorTag.setAttribute('content', '#000000');
+				} else if (localStorage.theme === 'light') {
+					document.documentElement.classList.add('light');
+					metaThemeColorTag.setAttribute('content', '#ffffff');
+				} else if (localStorage.theme === 'her') {
+					document.documentElement.classList.add('dark');
+					document.documentElement.classList.add('her');
+					metaThemeColorTag.setAttribute('content', '#983724');
+				} else {
+					document.documentElement.classList.add('dark');
+					metaThemeColorTag.setAttribute('content', '#171717');
+				}
+
+				window.matchMedia('(prefers-color-scheme: dark)').addListener((e) => {
+					if (localStorage.theme === 'system') {
+						if (e.matches) {
+							document.documentElement.classList.add('dark');
+							document.documentElement.classList.remove('light');
+							metaThemeColorTag.setAttribute('content', '#171717');
+						} else {
+							document.documentElement.classList.add('light');
+							document.documentElement.classList.remove('dark');
+							metaThemeColorTag.setAttribute('content', '#ffffff');
+						}
+					}
+				});
+			})();
+		</script>
+
+		<title>审计大模型</title>
+
+		%sveltekit.head%
+	</head>
+
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">%sveltekit.body%</div>
+
+		<div
+			id="splash-screen"
+			style="position: fixed; z-index: 100; top: 0; left: 0; width: 100%; height: 100%"
+		>
+			<style type="text/css" nonce="">
+				html {
+					overflow-y: scroll !important;
+				}
+			</style>
+
+			<img
+				id="logo"
+				style="
+					position: absolute;
+					width: auto;
+					height: 6rem;
+					top: 44%;
+					left: 50%;
+					transform: translateX(-50%);
+				"
+				src="/static/splash.png"
+			/>
+
+			<div
+				style="
+					position: absolute;
+					top: 33%;
+					left: 50%;
+					width: 24rem;
+					transform: translateX(-50%);
+					display: flex;
+					flex-direction: column;
+					align-items: center;
+				"
+			>
+				<img
+					id="logo-her"
+					style="width: auto; height: 13rem"
+					src="/static/splash.png"
+					class="animate-pulse-fast"
+				/>
+
+				<div style="position: relative; width: 24rem; margin-top: 0.5rem">
+					<div
+						id="progress-background"
+						style="
+							position: absolute;
+							width: 100%;
+							height: 0.75rem;
+							border-radius: 9999px;
+							background-color: #fafafa9a;
+						"
+					></div>
+
+					<div
+						id="progress-bar"
+						style="
+							position: absolute;
+							width: 0%;
+							height: 0.75rem;
+							border-radius: 9999px;
+							background-color: #fff;
+						"
+						class="bg-white"
+					></div>
+				</div>
+			</div>
+
+			<div style="position: absolute; bottom: 20px; width: 100%; text-align: center; font-size: 14px; color: #666;">
+				加载中，如等待时间过长，请<a href="#" onclick="document.getElementById('splash-screen').style.display='none'; return false;" style="color: #0066cc;">点击此处</a>跳过
+			</div>
+		</div>
+
+		<!-- 内网穿透模式提示 -->
+		<script>
+			window.addEventListener('load', function() {
+				if (window.isSlowNetwork) {
+					// 创建提示横幅
+					const banner = document.createElement('div');
+					banner.style.position = 'fixed';
+					banner.style.bottom = '10px';
+					banner.style.right = '10px';
+					banner.style.padding = '8px 12px';
+					banner.style.background = 'rgba(0,0,0,0.7)';
+					banner.style.color = 'white';
+					banner.style.borderRadius = '4px';
+					banner.style.zIndex = '9999';
+					banner.style.fontSize = '12px';
+					banner.textContent = '内网穿透模式已启用 - 资源请求已优化';
+					
+					// 5秒后自动消失
+					setTimeout(() => banner.remove(), 5000);
+					
+					document.body.appendChild(banner);
+				}
+			});
+		</script>
+	</body>
+</html>
+
+<style type="text/css" nonce="">
+	html {
+		overflow-y: hidden !important;
+	}
+
+	#splash-screen {
+		background: #fff;
+	}
+
+	html.dark #splash-screen {
+		background: #000;
+	}
+
+	html.dark #splash-screen img {
+		filter: invert(1);
+	}
+
+	html.her #splash-screen {
+		background: #983724;
+	}
+
+	#logo-her {
+		display: none;
+	}
+
+	#progress-background {
+		display: none;
+	}
+
+	#progress-bar {
+		display: none;
+	}
+
+	html.her #logo {
+		display: none;
+	}
+
+	html.her #logo-her {
+		display: block;
+		filter: invert(1);
+	}
+
+	html.her #progress-background {
+		display: block;
+	}
+
+	html.her #progress-bar {
+		display: block;
+	}
+
+	@media (max-width: 24rem) {
+		html.her #progress-background {
+			display: none;
+		}
+
+		html.her #progress-bar {
+			display: none;
+		}
+	}
+
+	@keyframes pulse {
+		50% {
+			opacity: 0.65;
+		}
+	}
+
+	.animate-pulse-fast {
+		animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+	}
+	
+	/* 慢网络模式样式优化 */
+	html.slow-network img {
+		image-rendering: auto !important;
+	}
+	
+	html.slow-network * {
+		transition: none !important;
+		animation-duration: 0s !important;
+	}
+</style>
