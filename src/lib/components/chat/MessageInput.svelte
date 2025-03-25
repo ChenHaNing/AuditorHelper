@@ -2,6 +2,7 @@
 	import { toast } from 'svelte-sonner';
 	import { v4 as uuidv4 } from 'uuid';
 	import { createPicker, getAuthToken } from '$lib/utils/google-drive-picker';
+	import { pickAndDownloadFile } from '$lib/utils/onedrive-file-picker';
 
 	import { onMount, tick, getContext, createEventDispatcher, onDestroy } from 'svelte';
 	const dispatch = createEventDispatcher();
@@ -29,7 +30,7 @@
 	import { WEBUI_BASE_URL, WEBUI_API_BASE_URL, PASTED_TEXT_CHARACTER_LIMIT } from '$lib/constants';
 
 	import InputMenu from './MessageInput/InputMenu.svelte';
-	import VoiceRecording from './MessageInput/VoiceRecording.svelte';
+	// import VoiceRecording from './MessageInput/VoiceRecording.svelte';
 	import FilesOverlay from './MessageInput/FilesOverlay.svelte';
 	import Commands from './MessageInput/Commands.svelte';
 
@@ -73,6 +74,10 @@
 	export let webSearchEnabled = false;
 	export let codeInterpreterEnabled = false;
 
+	// 控制电话和录音功能
+	export let enableVoice = false;
+	export let enableCall = false;
+
 	$: onChange({
 		prompt,
 		files,
@@ -83,6 +88,8 @@
 
 	let loaded = false;
 	let recording = false;
+
+	let isComposing = false;
 
 	let chatInputContainerElement;
 	let chatInputElement;
@@ -173,22 +180,6 @@
 		}
 
 		files = [...files, fileItem];
-		// Check if the file is an audio file and transcribe/convert it to text file
-		if (['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/x-m4a'].includes(file['type'])) {
-			const res = await transcribeAudio(localStorage.token, file).catch((error) => {
-				toast.error(`${error}`);
-				return null;
-			});
-
-			if (res) {
-				console.log(res);
-				const blob = new Blob([res.text], { type: 'text/plain' });
-				file = blobToFile(blob, `${file.name}.txt`);
-
-				fileItem.name = file.name;
-				fileItem.size = file.size;
-			}
-		}
 
 		try {
 			// During the file upload, file content is automatically extracted.
@@ -557,7 +548,7 @@
 						}}
 					/>
 
-					{#if recording}
+					{#if enableVoice && recording}
 						<VoiceRecording
 							bind:recording
 							on:cancel={async () => {
@@ -691,12 +682,13 @@
 												bind:value={prompt}
 												id="chat-input"
 												messageInput={true}
-												shiftEnter={!$mobile ||
-													!(
-														'ontouchstart' in window ||
-														navigator.maxTouchPoints > 0 ||
-														navigator.msMaxTouchPoints > 0
-													)}
+												shiftEnter={!($settings?.ctrlEnterToSend ?? false) &&
+													(!$mobile ||
+														!(
+															'ontouchstart' in window ||
+															navigator.maxTouchPoints > 0 ||
+															navigator.msMaxTouchPoints > 0
+														))}
 												placeholder={placeholder ? placeholder : $i18n.t('Send a Message')}
 												largeTextAsFile={$settings?.largeTextAsFile ?? false}
 												autocomplete={$config?.features.enable_autocomplete_generation}
@@ -721,6 +713,8 @@
 													console.log(res);
 													return res;
 												}}
+												oncompositionstart={() => (isComposing = true)}
+												oncompositionend={() => (isComposing = false)}
 												on:keydown={async (e) => {
 													e = e.detail.event;
 
@@ -820,15 +814,24 @@
 																navigator.msMaxTouchPoints > 0
 															)
 														) {
-															// Prevent Enter key from creating a new line
-															// Uses keyCode '13' for Enter key for chinese/japanese keyboards
-															if (e.keyCode === 13 && !e.shiftKey) {
-																e.preventDefault();
+															if (isComposing) {
+																return;
 															}
 
-															// Submit the prompt when Enter key is pressed
-															if (prompt !== '' && e.keyCode === 13 && !e.shiftKey) {
-																dispatch('submit', prompt);
+															// Uses keyCode '13' for Enter key for chinese/japanese keyboards.
+															//
+															// Depending on the user's settings, it will send the message
+															// either when Enter is pressed or when Ctrl+Enter is pressed.
+															const enterPressed =
+																($settings?.ctrlEnterToSend ?? false)
+																	? (e.key === 'Enter' || e.keyCode === 13) && isCtrlPressed
+																	: (e.key === 'Enter' || e.keyCode === 13) && !e.shiftKey;
+
+															if (enterPressed) {
+																e.preventDefault();
+																if (prompt !== '' || files.length > 0) {
+																	dispatch('submit', prompt);
+																}
 															}
 														}
 													}
@@ -891,34 +894,19 @@
 											class="scrollbar-hidden bg-transparent dark:text-gray-100 outline-hidden w-full pt-3 px-1 resize-none"
 											placeholder={placeholder ? placeholder : $i18n.t('Send a Message')}
 											bind:value={prompt}
-											on:keypress={(e) => {
-												if (
-													!$mobile ||
-													!(
-														'ontouchstart' in window ||
-														navigator.maxTouchPoints > 0 ||
-														navigator.msMaxTouchPoints > 0
-													)
-												) {
-													// Prevent Enter key from creating a new line
-													if (e.key === 'Enter' && !e.shiftKey) {
-														e.preventDefault();
-													}
-
-													// Submit the prompt when Enter key is pressed
-													if (prompt !== '' && e.key === 'Enter' && !e.shiftKey) {
-														dispatch('submit', prompt);
-													}
-												}
-											}}
+											on:compositionstart={() => (isComposing = true)}
+											on:compositionend={() => (isComposing = false)}
 											on:keydown={async (e) => {
 												const isCtrlPressed = e.ctrlKey || e.metaKey; // metaKey is for Cmd key on Mac
+
+												console.log('keydown', e);
 												const commandsContainerElement =
 													document.getElementById('commands-container');
 
 												if (e.key === 'Escape') {
 													stopResponse();
 												}
+
 												// Command/Ctrl + Shift + Enter to submit a message pair
 												if (isCtrlPressed && e.key === 'Enter' && e.shiftKey) {
 													e.preventDefault();
@@ -954,51 +942,87 @@
 													editButton?.click();
 												}
 
-												if (commandsContainerElement && e.key === 'ArrowUp') {
-													e.preventDefault();
-													commandsElement.selectUp();
+												if (commandsContainerElement) {
+													if (commandsContainerElement && e.key === 'ArrowUp') {
+														e.preventDefault();
+														commandsElement.selectUp();
 
-													const commandOptionButton = [
-														...document.getElementsByClassName('selected-command-option-button')
-													]?.at(-1);
-													commandOptionButton.scrollIntoView({ block: 'center' });
-												}
+														const commandOptionButton = [
+															...document.getElementsByClassName('selected-command-option-button')
+														]?.at(-1);
+														commandOptionButton.scrollIntoView({ block: 'center' });
+													}
 
-												if (commandsContainerElement && e.key === 'ArrowDown') {
-													e.preventDefault();
-													commandsElement.selectDown();
+													if (commandsContainerElement && e.key === 'ArrowDown') {
+														e.preventDefault();
+														commandsElement.selectDown();
 
-													const commandOptionButton = [
-														...document.getElementsByClassName('selected-command-option-button')
-													]?.at(-1);
-													commandOptionButton.scrollIntoView({ block: 'center' });
-												}
+														const commandOptionButton = [
+															...document.getElementsByClassName('selected-command-option-button')
+														]?.at(-1);
+														commandOptionButton.scrollIntoView({ block: 'center' });
+													}
 
-												if (commandsContainerElement && e.key === 'Enter') {
-													e.preventDefault();
+													if (commandsContainerElement && e.key === 'Enter') {
+														e.preventDefault();
 
-													const commandOptionButton = [
-														...document.getElementsByClassName('selected-command-option-button')
-													]?.at(-1);
+														const commandOptionButton = [
+															...document.getElementsByClassName('selected-command-option-button')
+														]?.at(-1);
 
-													if (e.shiftKey) {
-														prompt = `${prompt}\n`;
-													} else if (commandOptionButton) {
+														if (e.shiftKey) {
+															prompt = `${prompt}\n`;
+														} else if (commandOptionButton) {
+															commandOptionButton?.click();
+														} else {
+															document.getElementById('send-message-button')?.click();
+														}
+													}
+
+													if (commandsContainerElement && e.key === 'Tab') {
+														e.preventDefault();
+
+														const commandOptionButton = [
+															...document.getElementsByClassName('selected-command-option-button')
+														]?.at(-1);
+
 														commandOptionButton?.click();
-													} else {
-														document.getElementById('send-message-button')?.click();
+													}
+												} else {
+													if (
+														!$mobile ||
+														!(
+															'ontouchstart' in window ||
+															navigator.maxTouchPoints > 0 ||
+															navigator.msMaxTouchPoints > 0
+														)
+													) {
+														if (isComposing) {
+															return;
+														}
+
+														console.log('keypress', e);
+														// Prevent Enter key from creating a new line
+														const isCtrlPressed = e.ctrlKey || e.metaKey;
+														const enterPressed =
+															($settings?.ctrlEnterToSend ?? false)
+																? (e.key === 'Enter' || e.keyCode === 13) && isCtrlPressed
+																: (e.key === 'Enter' || e.keyCode === 13) && !e.shiftKey;
+
+														console.log('Enter pressed:', enterPressed);
+
+														if (enterPressed) {
+															e.preventDefault();
+														}
+
+														// Submit the prompt when Enter key is pressed
+														if ((prompt !== '' || files.length > 0) && enterPressed) {
+															dispatch('submit', prompt);
+														}
 													}
 												}
 
-												if (commandsContainerElement && e.key === 'Tab') {
-													e.preventDefault();
-
-													const commandOptionButton = [
-														...document.getElementsByClassName('selected-command-option-button')
-													]?.at(-1);
-
-													commandOptionButton?.click();
-												} else if (e.key === 'Tab') {
+												if (e.key === 'Tab') {
 													const words = findWordIndices(prompt);
 
 													if (words.length > 0) {
@@ -1108,6 +1132,21 @@
 													);
 												}
 											}}
+											uploadOneDriveHandler={async () => {
+												try {
+													const fileData = await pickAndDownloadFile();
+													if (fileData) {
+														const file = new File([fileData.blob], fileData.name, {
+															type: fileData.blob.type || 'application/octet-stream'
+														});
+														await uploadFileHandler(file);
+													} else {
+														console.log('No file was selected from OneDrive');
+													}
+												} catch (error) {
+													console.error('OneDrive Error:', error);
+												}
+											}}
 											onClose={async () => {
 												await tick();
 
@@ -1196,7 +1235,7 @@
 									</div>
 
 									<div class="self-end flex space-x-1 mr-1 shrink-0">
-										{#if !history?.currentId || history.messages[history.currentId]?.done == true}
+										{#if enableVoice && (!history?.currentId || history.messages[history.currentId]?.done == true)}
 											<Tooltip content={$i18n.t('Record voice')}>
 												<button
 													id="voice-input-button"
@@ -1246,7 +1285,7 @@
 										{/if}
 
 										{#if !history.currentId || history.messages[history.currentId]?.done == true}
-											{#if prompt === '' && files.length === 0}
+											{#if enableCall && prompt === '' && files.length === 0}
 												<div class=" flex items-center">
 													<Tooltip content={$i18n.t('Call')}>
 														<button
@@ -1285,14 +1324,17 @@
 
 																	stream = null;
 
-																	if (!$TTSWorker) {
-																		await TTSWorker.set(
-																			new KokoroWorker({
-																				dtype: $settings.audio?.tts?.engineConfig?.dtype ?? 'fp32'
-																			})
-																		);
+																	if ($settings.audio?.tts?.engine === 'browser-kokoro') {
+																		// If the user has not initialized the TTS worker, initialize it
+																		if (!$TTSWorker) {
+																			await TTSWorker.set(
+																				new KokoroWorker({
+																					dtype: $settings.audio?.tts?.engineConfig?.dtype ?? 'fp32'
+																				})
+																			);
 
-																		await $TTSWorker.init();
+																			await $TTSWorker.init();
+																		}
 																	}
 
 																	showCallOverlay.set(true);
